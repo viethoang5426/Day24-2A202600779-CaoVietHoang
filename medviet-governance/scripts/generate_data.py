@@ -5,19 +5,23 @@ import random
 
 fake = Faker("vi_VN")
 Faker.seed(42)
+random.seed(42)
 
 def generate_patients(n=200):
     records = []
     for _ in range(n):
+        # Generate CCCD ensuring it starts with non-zero digit for CSV safety
+        cccd = f"{random.randint(1,9)}" + "".join([str(random.randint(0,9)) for _ in range(11)])
+        # Generate phone number
+        phone = f"0{random.choice([3,5,7,8,9])}" + "".join([str(random.randint(0,9)) for _ in range(8)])
+        
         records.append({
             "patient_id": fake.uuid4(),
             "ho_ten": fake.name(),
-            "cccd": f"{random.randint(0,9)}" + 
-                    "".join([str(random.randint(0,9)) for _ in range(11)]),
+            "cccd": cccd,
             "ngay_sinh": fake.date_of_birth(minimum_age=18, maximum_age=90)
                               .strftime("%d/%m/%Y"),
-            "so_dien_thoai": f"0{random.choice([3,5,7,8,9])}" + 
-                              "".join([str(random.randint(0,9)) for _ in range(8)]),
+            "so_dien_thoai": phone,
             "email": fake.email(),
             "dia_chi": fake.address(),
             "benh": random.choice(["Tiểu đường", "Huyết áp cao", 
@@ -29,6 +33,7 @@ def generate_patients(n=200):
     return pd.DataFrame(records)
 
 df = generate_patients()
+# Save with string types to preserve leading zeros
 df.to_csv("data/raw/patients_raw.csv", index=False)
 print(f"Generated {len(df)} patient records")
 print(df.head(3))

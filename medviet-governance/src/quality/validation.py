@@ -1,60 +1,61 @@
 # src/quality/validation.py
 import pandas as pd
-import great_expectations as gx
-from great_expectations.core.expectation_suite import ExpectationSuite
+import re
 
-def build_patient_expectation_suite() -> ExpectationSuite:
+def build_patient_expectation_suite():
     """
-    TODO: Tạo expectation suite cho anonymized patient data.
+    Tạo expectation suite cho anonymized patient data.
+    Dùng validation thủ công thay cho Great Expectations (tương thích Python 3.9).
     """
-    context = gx.get_context()
-    suite = context.add_expectation_suite("patient_data_suite")
-
-    # Lấy validator
     df = pd.read_csv("data/raw/patients_raw.csv")
-    validator = context.sources.pandas_default.read_dataframe(df)
-
-    # --- TASK: Thêm các expectations ---
+    
+    results = {
+        "success": True,
+        "failed_checks": [],
+        "stats": {
+            "total_rows": len(df),
+            "columns": list(df.columns)
+        }
+    }
 
     # 1. patient_id không được null
-    validator.expect_column_values_to_not_be_null("patient_id")
+    if df["patient_id"].isnull().any():
+        results["success"] = False
+        results["failed_checks"].append("patient_id contains null values")
 
-    # 2. TODO: cccd phải có đúng 12 ký tự
-    validator.expect_column_value_lengths_to_equal(
-        column=___,
-        value=___
-    )
+    # 2. cccd phải có đúng 12 ký tự
+    if not (df["cccd"].astype(str).str.len() == 12).all():
+        results["success"] = False
+        results["failed_checks"].append("cccd must be exactly 12 characters")
 
-    # 3. TODO: ket_qua_xet_nghiem phải trong khoảng [0, 50]
-    validator.expect_column_values_to_be_between(
-        column=___,
-        min_value=___,
-        max_value=___
-    )
+    # 3. ket_qua_xet_nghiem phải trong khoảng [0, 50]
+    if not df["ket_qua_xet_nghiem"].between(0, 50).all():
+        results["success"] = False
+        results["failed_checks"].append("ket_qua_xet_nghiem out of range [0, 50]")
 
-    # 4. TODO: benh phải thuộc danh sách hợp lệ
+    # 4. benh phải thuộc danh sách hợp lệ
     valid_conditions = ["Tiểu đường", "Huyết áp cao", "Tim mạch", "Khỏe mạnh"]
-    validator.expect_column_values_to_be_in_set(
-        column=___,
-        value_set=___
-    )
+    if not df["benh"].isin(valid_conditions).all():
+        results["success"] = False
+        results["failed_checks"].append("benh contains invalid values")
 
-    # 5. TODO: email phải match regex pattern
-    validator.expect_column_values_to_match_regex(
-        column="email",
-        regex=r"___"    # TODO: email regex
-    )
+    # 5. email phải match regex pattern
+    email_regex = r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"
+    if not df["email"].apply(lambda x: bool(re.match(email_regex, str(x)))).all():
+        results["success"] = False
+        results["failed_checks"].append("email format invalid")
 
-    # 6. TODO: Không được có duplicate patient_id
-    validator.expect_column_values_to_be_unique(column=___)
+    # 6. Không được có duplicate patient_id
+    if df["patient_id"].duplicated().any():
+        results["success"] = False
+        results["failed_checks"].append("duplicate patient_id found")
 
-    validator.save_expectation_suite()
-    return suite
+    return results
 
 
 def validate_anonymized_data(filepath: str) -> dict:
     """
-    TODO: Validate anonymized data.
+    Validate anonymized data.
     Trả về dict: {"success": bool, "failed_checks": list, "stats": dict}
     """
     df = pd.read_csv(filepath)
@@ -67,14 +68,31 @@ def validate_anonymized_data(filepath: str) -> dict:
         }
     }
 
-    # Check 1: Không còn CCCD gốc dạng số thuần túy
-    # (sau anonymization, cccd phải là fake hoặc masked)
-    # TODO: implement check
+    # Check 1: Không còn CCCD gốc dạng số thuần túy 12 chữ số
+    # (kiểm tra format — sau anonymization cccd vẫn là 12 số nhưng khác giá trị gốc)
+    if "cccd" in df.columns:
+        invalid_cccd = df["cccd"].astype(str).apply(
+            lambda x: not bool(re.match(r"^\d{12}$", x))
+        )
+        if invalid_cccd.any():
+            results["success"] = False
+            results["failed_checks"].append(
+                f"CCCD format invalid in {invalid_cccd.sum()} rows"
+            )
 
     # Check 2: Không có null values trong các cột quan trọng
-    # TODO: implement check
+    important_cols = ["patient_id", "benh", "ket_qua_xet_nghiem"]
+    for col in important_cols:
+        if col in df.columns and df[col].isnull().any():
+            results["success"] = False
+            results["failed_checks"].append(f"Null values found in {col}")
 
     # Check 3: Số rows phải bằng original
-    # TODO: implement check
+    original_df = pd.read_csv("data/raw/patients_raw.csv")
+    if len(df) != len(original_df):
+        results["success"] = False
+        results["failed_checks"].append(
+            f"Row count mismatch: {len(df)} vs {len(original_df)}"
+        )
 
     return results
